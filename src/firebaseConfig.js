@@ -4,17 +4,14 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore, collection } from "firebase/firestore";
 
-// ===== ВАША конфигурация Firebase (из консоли) =====
 const firebaseConfig = {
-  apiKey: "AIzaSyD-9FUPFzqOTdizsZKgp_PFL-cfX5NAgcw",
-  authDomain: "beach-rent-real-time.firebaseapp.com",
-  projectId: "beach-rent-real-time",
-  storageBucket: "beach-rent-real-time.appspot.com", // ← ИСПРАВЛЕНО!
-  messagingSenderId: "691307900121",
-  appId: "1:691307900121:web:c6421487b29ceefbff62c8",
-  measurementId: "G-JCH8EFEB0S"
-};
-
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  };
 // 1) Инициализируем Firebase App
 const app = initializeApp(firebaseConfig);
 
