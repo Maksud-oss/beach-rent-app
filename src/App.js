@@ -1,12 +1,10 @@
-// ▶ src/App.js
+// src/App.js
 
 import React, { useState, useEffect } from "react";
 import { YMaps, Map, Placemark, Polygon, RoutePanel } from "@pbe/react-yandex-maps";
 import { QRCodeCanvas } from "qrcode.react";
 
 import {
-  getFirestore,
-  collection,
   setDoc,
   doc,
   onSnapshot,
