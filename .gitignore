@@ -1,0 +1,19 @@
+# Игнорировать папку с зависимостями
+node_modules/
+
+# Игнорировать сгенерированные билды React/Vue/etc.
+build/
+
+# Если у вас в проекте есть подкаталоги client или admin,
+# и в них тоже node_modules и build, добавьте:
+client/node_modules/
+client/build/
+admin/node_modules/
+admin/build/
+
+# Общие вспомогательные директории и файлы, которые не нужно коммитить
+.DS_Store
+*.log
+.env
+.vscode/
+coverage/
