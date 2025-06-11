@@ -1,0 +1,95 @@
+diff --git a/src/App.js b/src/App.js
+index abcdef0..1234567 100644
+--- a/src/App.js
++++ b/src/App.js
+@@ -1,6 +1,7 @@
+ import React, { useState, useEffect } from "react";
+-import { Polygon } from "@pbe/react-yandex-maps";
++import { Polygon, /*...*/ } from "@pbe/react-yandex-maps";
+ import { QRCodeCanvas } from "qrcode.react";
++import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
+ import { setDoc, /*...*/ } from "firebase/firestore";
+ import { RecaptchaVerifier, /*...*/ } from "firebase/auth";
+ import { db, beachesCollectionRef, bookingsCollectionRef, auth } from "./firebaseConfig";
+@@ -60,7 +61,8 @@ const initialBeaches = [
+ // ...
+ ];
+ 
+-export default function App() {
++export default function App() {
++  // добавим состояние для карусели
+   const [carouselIdx, setCarouselIdx] = useState(0);
+ 
+   // ...
+@@ -185,7 +187,18 @@ export default function App() {
+         {beaches.map((b, i) => (
+           <Polygon
+             key={b.id}
+-            geometry={[b.area]}
++            geometry={[b.area]}
++            options={{
++              fillColor: b.closed
++                ? "rgba(200,200,200,0.3)"
++                : "rgba(255,128,171,0.3)",
++              strokeColor: "#ff80ab",
++              strokeWidth: 2,
++              hintContent: `${b.name}`
++            }}
+             onClick={() => openInfo(i)}
+           />
+         ))}
+@@ -250,6 +263,20 @@ export default function App() {
+       {infoModalOpen && selectedBeach !== null && (
+         <div className="overlay" onClick={closeAll}>
+           <div className="infoModal" onClick={(e) => e.stopPropagation()}>
++            {/* карусель одного изображения */}
++            <div className="carousel">
++              <button
++                className="carousel-btn left"
++                onClick={() =>
++                  setCarouselIdx((idx) =>
++                    idx > 0 ? idx - 1 : beaches[selectedBeach].images.length - 1
++                  )
++                }
++              >
++                <FaChevronLeft />
++              </button>
+               <img
+                 src={beaches[selectedBeach].images[carouselIdx]}
+                 alt={`Фото ${carouselIdx + 1}`}
+@@ -258,7 +285,11 @@ export default function App() {
+           </div>
+ 
+-            <p>{beaches[selectedBeach].description}</p>
++            {/* адрес под фото */}
++            <p><strong>Адрес:</strong> {beaches[selectedBeach].address}</p>
++            <p>{beaches[selectedBeach].description}</p>
++
++            {/* розовая кнопка «К схеме» */}
+             <button
+               className="mainBtn"
+               onClick={() => openBeachDetail(selectedBeach)}
+@@ -300,7 +331,11 @@ export default function App() {
+       {paymentModal && (
+         <div className="overlay" onClick={closeAll}>
+           <div className="payModal" onClick={(e) => e.stopPropagation()}>
+-            <button onClick={handlePay}>Оплатить</button>
++            {/* розовая «Оплатить по СБП» */}
++            <button
++              className="mainBtn"
++              onClick={handlePay}
++            >
++             Оплатить по СБП
++            </button>
+             <button className="closeBtn" onClick={closeAll}>×</button>
+           </div>
+         </div>
+@@ -315,6 +350,10 @@ export default function App() {
+       {qrModalOpen && (
+         <div className="overlay" onClick={closeAll}>
+           <div className="payModal" onClick={(e) => e.stopPropagation()}>
++            <h2>Покажите сотруднику пляжа</h2>
++            <button className="closeBtn" onClick={closeAll}>×</button>
+             <QRCodeCanvas
+               value={JSON.stringify(lastBookingData)}
+               size={200}

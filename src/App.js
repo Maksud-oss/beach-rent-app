@@ -1,9 +1,13 @@
 // src/App.js
-
 import React, { useState, useEffect } from "react";
-import { YMaps, Map, Placemark, Polygon, RoutePanel } from "@pbe/react-yandex-maps";
+import {
+  YMaps,
+  Map,
+  Placemark,
+  Polygon,
+  RoutePanel
+} from "@pbe/react-yandex-maps";
 import { QRCodeCanvas } from "qrcode.react";
-
 import {
   setDoc,
   doc,
@@ -15,394 +19,311 @@ import {
   addDoc,
   serverTimestamp
 } from "firebase/firestore";
-
 import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
   signOut,
   onAuthStateChanged
 } from "firebase/auth";
-
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "firebase/auth";
 import {
-  db,                       // ваш объект Firestore, экспортируемый из firebaseConfig.js
-  beachesCollectionRef,     // collection(db, "beaches")
-  bookingsCollectionRef,    // collection(db, "bookings")
-  auth                      // ваш объект Firebase Auth
+  db,
+  beachesCollectionRef,
+  bookingsCollectionRef,
+  auth
 } from "./firebaseConfig";
 
-// Ваш API-ключ для Яндекс-Карт (замените на свой, если отличается)
-const API_KEY = "21770516-5dde-4546-b653-d9e4947f0178";
+/* ————————————————————————————
+   Карта имён папок и имён файлов
+———————————————————————————— */
+const folderMap = {
+  "Огонёк": "beach1",  "Мандарин":"beach3",
+  "Южный 2": "beach4",
+  "Чайка":   "beach5"
+};
 
-// ==== Начальный список пляжей ====
-// Используется только один раз, если коллекция пуста
+const imageNamesMap = {
+  "Огонёк":    ["1.jpg", "2.jpg", "3.jpg"],  "Мандарин":  ["x.jpg", "y.jpg", "z.jpg"],
+  "Южный 2":   ["один.jpg", "два.jpg", "три.jpg"],
+  "Чайка":     ["one.jpg", "two.jpg", "three.jpg"]
+};
+
+/* ————————————————————————————
+   Константы и начальные пляжи
+———————————————————————————— */
+const API_KEY = "21770516-5dde-4546-b653-d9e4947f0178";
+const WORK_DAY_START = 7;  // 07:00
+const WORK_DAY_END   = 20; // 20:00
+
+// Пример initialBeaches с описанием и фото.
 const initialBeaches = [
   {
-    name: "Чайка",
-    coords: [43.420374, 39.919106],
+    name: "Огонёк",
+    coords: [43.416, 39.934],
     area: [
-      [43.420599, 39.912931],
-      [43.420599, 39.925281],
-      [43.420374, 39.925281],
-      [43.420374, 39.912931]
+      [43.4181, 39.9312],
+      [43.4182, 39.9363],
+      [43.4148, 39.9369],
+      [43.4147, 39.9319]
+    ],
+    loungersCount: 40,
+    price: 600,
+    closed: false,
+    description:
+      "Уютный пляж «Огонёк», есть бар, душевые кабины и спасатели на посту.",
+    images: imageNamesMap["Огонёк"].map(fn => `/images/${folderMap["Огонёк"]}/${fn}`)
+  },
+  {
+    name: "Чайка",
+    coords: [43.426, 39.923],
+    area: [
+      [43.4276, 39.9201],
+      [43.4278, 39.9257],
+      [43.4251, 39.9261],
+      [43.4249, 39.9205]
     ],
     loungersCount: 50,
     price: 500,
-    closed: false
-  },
-  {
-    name: "Огонёк",
-    coords: [43.4190, 39.9160],
-    area: [
-      [43.419, 39.911053],
-      [43.419, 39.920947],
-      [43.418646, 39.920947],
-      [43.418646, 39.911053]
-    ],
-    loungersCount: 50,
-    price: 600,
-    closed: false
-  },
-  {
-    name: "Мандарин",
-    coords: [43.4177, 39.921855],
-    area: [
-      [43.41797, 39.920001],
-      [43.41797, 39.923709],
-      [43.4177, 39.923709],
-      [43.4177, 39.920001]
-    ],
-    loungersCount: 50,
-    price: 700,
-    closed: false
-  },
-  {
-    name: "Южный 2",
-    coords: [43.420374, 39.916636],
-    area: [
-      [43.420428, 39.914781],
-      [43.420428, 39.918491],
-      [43.420374, 39.918491],
-      [43.420374, 39.914781]
-    ],
-    loungersCount: 50,
-    price: 800,
-    closed: false
-  },
-  {
-    name: "Бриз",
-    coords: [43.408, 39.953],
-    area: [
-      [43.423, 39.938],
-      [43.423, 39.968],
-      [43.393, 39.968],
-      [43.393, 39.938]
-    ],
-    loungersCount: 50,
-    price: 900,
-    closed: false
+    closed: false,
+    description:
+      "Просторная «Чайка» с видом на причал, детской площадкой и зоной для волейбола.",
+    images: imageNamesMap["Чайка"].map(fn => `/images/${folderMap["Чайка"]}/${fn}`)
   }
 ];
 
+/* ==================================================================
+   APP.JS
+================================================================== */
 export default function App() {
-  // ─────────────────────────────────────────────────────────────
-  // 1) React-хуки для состояния
-  // ─────────────────────────────────────────────────────────────
-  // --- Авторизация ---
-  const [userName, setUserName] = useState("");
-  const [userPhone, setUserPhone] = useState("");
-  const [isAuthChecked, setIsAuthChecked] = useState(false);
-  // Шаги: 1 – имя/телефон, 2 – ввод кода, 3 – основной экран
-  const [authStep, setAuthStep] = useState(1);
-  const [verificationCode, setVerificationCode] = useState("");
+  const carouselRef = React.useRef(null);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  const scrollCarousel = (dir) => {
+    if (carouselRef.current) {
+      const width = carouselRef.current.offsetWidth;
+      carouselRef.current.scrollLeft += dir * (width * 0.6);
+    }
+  };
+  /* ——— Авторизация ——————————————————————————————————————— */
+  const [userName, setUserName]                   = useState("");
+  const [userPhone, setUserPhone]                 = useState("");
+  const [isAuthChecked, setIsAuthChecked]         = useState(false);
+  const [authStep, setAuthStep]                   = useState(1);
+  const [verificationCode, setVerificationCode]   = useState("");
   const [confirmationResult, setConfirmationResult] = useState(null);
-  const [authError, setAuthError] = useState("");
+  const [authError, setAuthError]                 = useState("");
 
-  // --- Пляжи и бронирования ---
-  const [beaches, setBeaches] = useState([]);            // массив пляжей из Firestore
-  const [bookingsToday, setBookingsToday] = useState([]); // брони на сегодня
-  const [selectedBeach, setSelectedBeach] = useState(null);
-  const [fetchedBookings, setFetchedBookings] = useState([]); // брони для выбранного пляжа/даты
-  const [selectedLoungers, setSelectedLoungers] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [paymentModal, setPaymentModal] = useState(false);
-  const [qrShown, setQrShown] = useState(false);
-  const [lastBookingData, setLastBookingData] = useState(null);
-  const [loadingBooking, setLoadingBooking] = useState(false);
+  /* ——— Данные пляжей и броней ————————————————————————————————— */
+  const [beaches, setBeaches]                     = useState([]);
+  const [bookingsToday, setBookingsToday]         = useState([]);
+  const [selectedBeach, setSelectedBeach]         = useState(null);
+  const [fetchedBookings, setFetchedBookings]     = useState([]);
+  const [selectedLoungers, setSelectedLoungers]   = useState([]);
 
-  // --- Геопозиция + дата/время брони ---
-  const [userCoords, setUserCoords] = useState(null);
-  const [bookingDate, setBookingDate] = useState("");
-  const [bookingTimeStart, setBookingTimeStart] = useState("");
-  const [bookingTimeEnd, setBookingTimeEnd] = useState("");
+  /* ——— Управление модалками —————————————————————————————— */
+  const [infoModalOpen, setInfoModalOpen]         = useState(false);
+  const [schemaModalOpen, setSchemaModalOpen]     = useState(false);
+  const [paymentModal, setPaymentModal]           = useState(false);
+  const [qrModalOpen, setQrModalOpen]             = useState(false);
 
-  // ─────────────────────────────────────────────────────────────
-  // 2) Проверяем состояние авторизации (Firebase Auth)
-  // ─────────────────────────────────────────────────────────────
+  /* ——— QR и оплата ———————————————————————————————————————— */
+  const [qrShown, setQrShown]                     = useState(false);
+  const [lastBookingData, setLastBookingData]     = useState(null);
+  const [loadingBooking, setLoadingBooking]       = useState(false);
+
+  /* ——— Геопозиция ——————————————————————————————————————— */
+  const [userCoords, setUserCoords]               = useState(null);
+
+  /* ——— Дата и время брони ——————————————————————————————— */
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [bookingDate, setBookingDate]             = useState(todayStr);
+  const [bookingTimeStart, setBookingTimeStart]   = useState("");
+  const [bookingTimeEnd, setBookingTimeEnd]       = useState("");
+
+  /* ——— Список опций времени (только целые часы) ———————————— */
+  const availableTimes = [];
+  for (let h = WORK_DAY_START; h <= WORK_DAY_END; h++) {
+    const hh = String(h).padStart(2, "0");
+    availableTimes.push(`${hh}:00`);
+  }
+
+  /* ——— 1. Проверяем auth ——————————————————————————————— */
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsub = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // Пользователь уже залогинен, берём имя/телефон из localStorage
-        const storedName = localStorage.getItem("beachRentUserName");
-        const storedPhone = localStorage.getItem("beachRentUserPhone");
-        if (storedName && storedPhone) {
-          setUserName(storedName);
-          setUserPhone(storedPhone);
-          setAuthStep(3);
-        } else {
-          setAuthStep(1);
-        }
+        setUserName(localStorage.getItem("beachRentUserName") || "Гость");
+        setUserPhone(localStorage.getItem("beachRentUserPhone") || "");
+        setAuthStep(3);
       } else {
+        setAuthStep(1);
         setUserName("");
         setUserPhone("");
-        setAuthStep(1);
       }
       setIsAuthChecked(true);
     });
-    return () => unsubscribe();
-  }, []);
+    return () => unsub();
+  }, [])
 
-  // ─────────────────────────────────────────────────────────────
-  // 3) Real-time загрузка пляжей (collection “beaches”)
-  // ─────────────────────────────────────────────────────────────
+;
+
+  /* ——— 2. Seed initialBeaches в Firestore ——————————————— */
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      beachesCollectionRef,
-      async (snapshot) => {
-        if (snapshot.empty) {
-          // Если коллекция пуста, инициализируем initialBeaches
-          for (const beach of initialBeaches) {
-            const beachId = beach.name.replace(/\s+/g, "_");
-            await setDoc(doc(db, "beaches", beachId), {
-              name: beach.name,
-              coords: new GeoPoint(beach.coords[0], beach.coords[1]),
-              area: beach.area.map(([lat, lng]) => new GeoPoint(lat, lng)),
-              loungersCount: beach.loungersCount,
-              price: beach.price,
-              closed: beach.closed
-            });
-          }
-          // Пока идёт запись — сразу кладём initialBeaches в локальный стейт
-          setBeaches(
-            initialBeaches.map((b) => ({
-              id: b.name.replace(/\s+/g, "_"),
-              name: b.name,
-              coords: b.coords,
-              area: b.area,
-              loungersCount: b.loungersCount,
-              price: b.price,
-              closed: b.closed
-            }))
-          );
-        } else {
-          // Если что-то в базе уже есть — подгружаем и конвертируем GeoPoint → [lat, lng]
-          const loaded = snapshot.docs.map((docSnap) => {
-            const data = docSnap.data();
-            // Преобразуем coords в [lat, lng]
-            let centerCoords = [0, 0];
-            if (
-              data.coords &&
-              typeof data.coords.latitude === "number" &&
-              typeof data.coords.longitude === "number"
-            ) {
-              // coords — GeoPoint
-              centerCoords = [data.coords.latitude, data.coords.longitude];
-            } else if (Array.isArray(data.coords) && data.coords.length === 2) {
-              // coords — массив [lat, lng]
-              centerCoords = data.coords;
-            } else if (
-              data.coords &&
-              typeof data.coords.lat === "number" &&
-              typeof data.coords.lng === "number"
-            ) {
-              // coords — объект {lat, lng}
-              centerCoords = [data.coords.lat, data.coords.lng];
-            }
-
-            // Преобразуем area (массив границ) в [[lat, lng], …]
-            let polygonCoords = [];
-            if (Array.isArray(data.area)) {
-              polygonCoords = data.area
-                .map((pt) => {
-                  if (
-                    pt &&
-                    typeof pt.latitude === "number" &&
-                    typeof pt.longitude === "number"
-                  ) {
-                    // элемент — GeoPoint
-                    return [pt.latitude, pt.longitude];
-                  } else if (
-                    pt &&
-                    typeof pt.lat === "number" &&
-                    typeof pt.lng === "number"
-                  ) {
-                    // элемент — {lat, lng}
-                    return [pt.lat, pt.lng];
-                  } else if (Array.isArray(pt) && pt.length === 2) {
-                    // элемент — массив [lat, lng]
-                    return pt;
-                  } else {
-                    return [0, 0];
-                  }
-                })
-                .filter(
-                  ([la, lo]) =>
-                    typeof la === "number" && typeof lo === "number"
-                );
-            }
-
-            return {
-              id: docSnap.id,
-              name: data.name,
-              coords: centerCoords,
-              area: polygonCoords,
-              loungersCount:
-                typeof data.loungersCount === "number"
-                  ? data.loungersCount
-                  : 0,
-              price: typeof data.price === "number" ? data.price : 0,
-              closed: data.closed === true
-            };
+    const unsub = onSnapshot(beachesCollectionRef, async (snap) => {
+      if (snap.empty) {
+        for (const b of initialBeaches) {
+          const id = b.name.replace(/\s+/g, "_");
+          await setDoc(doc(db, "beaches", id), {
+            name: b.name,
+            coords: new GeoPoint(b.coords[0], b.coords[1]),
+            area: b.area.map(([la, lo]) => new GeoPoint(la, lo)),
+            loungersCount: b.loungersCount,
+            price: b.price,
+            closed: b.closed,
+            description: b.description || "",
+            images: b.images || []
           });
-          setBeaches(loaded);
         }
-      },
-      (err) => {
-        console.error("Ошибка onSnapshot для beaches:", err);
+        setBeaches(
+          initialBeaches.map((b) => ({
+            id: b.name.replace(/\s+/g, "_"),
+            ...b
+          }))
+        );
+      } else {
+        // Обходим документы и подставляем локальные картинки по имени пляжа
+        setBeaches(
+          snap.docs.map((d) => {
+            const dt = d.data();
+            const toArr = (gp) =>
+              gp && typeof gp.latitude === "number"
+                ? [gp.latitude, gp.longitude]
+                : gp;
+            const name = dt.name;
+            // Если для этого пляжа есть наши локальные файлы, используем их,
+            // иначе — пробуем dt.images или пустой массив
+            const images = imageNamesMap[name]
+              ? imageNamesMap[name].map(fn => `/images/${folderMap[name]}/${fn}`)
+              : dt.images || [];
+            return {
+              id: d.id,
+              name: name,
+              coords: toArr(dt.coords),
+              area: Array.isArray(dt.area) ? dt.area.map(toArr) : [],
+              loungersCount: dt.loungersCount,
+              price: dt.price,
+              closed: dt.closed,
+              description: dt.description,
+              images
+            };
+          })
+        );
       }
-    );
-    return () => unsubscribe();
-  }, []);
+    });
+    return () => unsub();
+  }, [])
 
-  // ─────────────────────────────────────────────────────────────
-  // 4) Real-time загрузка бронирований на сегодня
-  // ─────────────────────────────────────────────────────────────
+
+
+;
+
+  /* ——— 3. Бронь сегодня для расчёта процента занятости ———— */
   useEffect(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    setBookingDate(todayStr);
-
-    const bookingsQuery = query(
+    const q = query(
       bookingsCollectionRef,
       where("bookingDate", "==", todayStr)
     );
+    const unsub = onSnapshot(q, (snap) => {
+      const arr = [];
+      snap.forEach((d) =>
+        arr.push({ ...d.data(), loungers: d.data().loungers ?? [] })
+      );
+      setBookingsToday(arr);
+    });
+    return () => unsub();
+  }, [todayStr]);
 
-    const unsubscribe = onSnapshot(
-      bookingsQuery,
-      (snapshot) => {
-        const arr = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          const loungersArray = Array.isArray(data.loungers)
-            ? data.loungers
-            : [];
-          arr.push({
-            ...data,
-            loungers: loungersArray
-          });
-        });
-        setBookingsToday(arr);
-      },
-      (err) => {
-        console.error("Ошибка onSnapshot для bookingsToday:", err);
+  /* ——— 4. Автоскрытие QR-кнопки по окончании брони ——————— */
+  useEffect(() => {
+    if (!qrShown || !lastBookingData) return;
+    const timer = setInterval(() => {
+      const end = new Date(
+        `${lastBookingData.bookingDate}T${lastBookingData.bookingTimeEnd}:00`
+      ).getTime();
+      if (Date.now() > end) {
+        setQrShown(false);
+        setLastBookingData(null);
+        setQrModalOpen(false);
       }
-    );
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [qrShown, lastBookingData]);
 
-    return () => unsubscribe();
-  }, []);
+  /* ——— 5. Открыть описание пляжа ——————————————— */
+  const openInfo = (idx) => {
+    setSelectedBeach(idx);
+    setInfoModalOpen(true);
+  };
 
-  // ─────────────────────────────────────────────────────────────
-  // 5) Открываем модалку детали пляжа (выбор лежаков и т. д.)
-  // ─────────────────────────────────────────────────────────────
-  const openBeachDetail = async (beachIdx) => {
-    const beach = beaches[beachIdx];
-    if (!beach) return;
-    if (beach.closed) {
-      alert("К сожалению, этот пляж временно закрыт для бронирования.");
-      return;
-    }
-    setSelectedBeach(beachIdx);
+  /* ——— 6. Открыть схему лежаков ———————————————————— */
+  const openBeachDetail = async (idx) => {
+    setInfoModalOpen(false);
     setSelectedLoungers([]);
-    setModalOpen(true);
-    setPaymentModal(false);
-    setQrShown(false);
-    setFetchedBookings([]);
     setBookingTimeStart("");
     setBookingTimeEnd("");
+    setSchemaModalOpen(true);
+    setPaymentModal(false);
 
-    // Получаем геопозицию пользователя
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => setUserCoords([pos.coords.latitude, pos.coords.longitude]),
+        (p) => setUserCoords([p.coords.latitude, p.coords.longitude]),
         () => setUserCoords(null)
       );
     }
 
-    // Загружаем брони на этот пляж по текущей дате
+    const beach = beaches[idx];
     const q = query(
       bookingsCollectionRef,
       where("beachId", "==", beach.id),
       where("bookingDate", "==", bookingDate)
     );
-    const snapshot = await getDocs(q);
+    const snap = await getDocs(q);
     const arr = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      const loungersArray = Array.isArray(data.loungers)
-        ? data.loungers
-        : [];
-      arr.push({
-        ...data,
-        loungers: loungersArray
-      });
-    });
+    snap.forEach((d) =>
+      arr.push({ ...d.data(), loungers: d.data().loungers ?? [] })
+    );
     setFetchedBookings(arr);
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // 6) Вычисляем процент занятости сейчас для каждого пляжа
-  // ─────────────────────────────────────────────────────────────
-  const calculateOccupancyPercent = (beach, bookingsList) => {
-    if (
-      !Array.isArray(bookingsList) ||
-      !Array.isArray(beach.area) ||
-      beach.loungersCount === 0
-    )
-      return 0;
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    let occupiedCount = 0;
-
-    bookingsList.forEach((b) => {
-      if (b.beachId !== beach.id) return;
-      if (!Array.isArray(b.loungers)) return;
-      const [h1, m1] = b.bookingTimeStart.split(":").map(Number);
-      const [h2, m2] = b.bookingTimeEnd.split(":").map(Number);
-      const startMin = h1 * 60 + m1;
-      const endMin = h2 * 60 + m2;
-      if (nowMinutes >= startMin && nowMinutes < endMin) {
-        occupiedCount += b.loungers.length;
-      }
-    });
-
-    const percent = Math.round(
-      (occupiedCount / beach.loungersCount) * 100
-    );
-    return Math.min(percent, 100);
+  /* ——— 7. Закрыть все модалки —————————————————————— */
+  const closeAll = () => {
+    setInfoModalOpen(false);
+    setSchemaModalOpen(false);
+    setPaymentModal(false);
+    setQrModalOpen(false);
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // 7) Вычисляем свободные интервалы для конкретного лежака
-  // ─────────────────────────────────────────────────────────────
-  const computeFreeIntervalsForLounger = (loungerIndex, bookingsList) => {
-    const dayStart = 7 * 60; // 07:00
-    const dayEnd = 20 * 60; // 20:00
+  /* ——— 8. Расчёт занятости ——————————————————————— */
+  const occupancyPercent = (beach, list) => {
+    const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+    let busy = 0;
+    list.forEach((b) => {
+      if (b.beachId !== beach.id) return;
+      const [h1, m1] = b.bookingTimeStart.split(":").map(Number);
+      const [h2, m2] = b.bookingTimeEnd.split(":").map(Number);
+      if (nowM >= h1 * 60 + m1 && nowM < h2 * 60 + m2) busy += b.loungers.length;
+    });
+    return Math.round((busy / beach.loungersCount) * 100);
+  };
 
-    // Собираем все занятые интервалы
-    const busyIntervals = bookingsList
+  /* ——— 9. Свободные интервалы (double-click) ————————— */
+  const freeIntervals = (idx, list) => {
+    const dayStart = WORK_DAY_START * 60;
+    const dayEnd   = WORK_DAY_END * 60;
+    const busy = list
       .filter(
         (b) =>
           b.beachId === beaches[selectedBeach].id &&
-          Array.isArray(b.loungers) &&
-          b.loungers.includes(loungerIndex + 1)
+          b.loungers.includes(idx + 1)
       )
       .map((b) => {
         const [h1, m1] = b.bookingTimeStart.split(":").map(Number);
@@ -411,552 +332,261 @@ export default function App() {
       })
       .sort((a, b) => a.start - b.start);
 
-    // Объединяем пересекающиеся интервалы
-    const mergedBusy = [];
-    busyIntervals.forEach((interval) => {
-      if (mergedBusy.length === 0) {
-        mergedBusy.push(interval);
+    const merged = [];
+    busy.forEach((it) => {
+      if (!merged.length || it.start > merged[merged.length - 1].end) {
+        merged.push({ ...it });
       } else {
-        const last = mergedBusy[mergedBusy.length - 1];
-        if (interval.start <= last.end) {
-          last.end = Math.max(last.end, interval.end);
-        } else {
-          mergedBusy.push(interval);
-        }
+        merged[merged.length - 1].end = Math.max(
+          merged[merged.length - 1].end,
+          it.end
+        );
       }
     });
 
-    // Находим свободные промежутки
-    const freeIntervals = [];
-    let cursor = dayStart;
-    mergedBusy.forEach((bi) => {
-      if (cursor < bi.start) {
-        freeIntervals.push({ start: cursor, end: bi.start });
-      }
-      cursor = Math.max(cursor, bi.end);
+    const free = [];
+    let cur = dayStart;
+    merged.forEach((b) => {
+      if (cur < b.start) free.push({ s: cur, e: b.start });
+      cur = Math.max(cur, b.end);
     });
-    if (cursor < dayEnd) {
-      freeIntervals.push({ start: cursor, end: dayEnd });
-    }
+    if (cur < dayEnd) free.push({ s: cur, e: dayEnd });
 
-    // Форматируем «ЧЧ:ММ»
-    return freeIntervals.map(({ start, end }) => {
-      const format = (minutes) => {
-        const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
-        const mm = String(minutes % 60).padStart(2, "0");
-        return `${hh}:${mm}`;
-      };
-      return `${format(start)} – ${format(end)}`;
-    });
+    const fmt = (m) =>
+      `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(
+        m % 60
+      ).padStart(2, "0")}`;
+    return free.map(({ s, e }) => `${fmt(s)} – ${fmt(e)}`);
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // 8) Обработка двойного клика по лежаку: показать свободные интервалы
-  // ─────────────────────────────────────────────────────────────
-  const handleLoungerClick = (i) => {
-    if (selectedBeach === null) return;
-    const freeList = computeFreeIntervalsForLounger(i, fetchedBookings);
-    if (freeList.length === 0) {
-      alert(`Лежак ${i + 1} полностью забронирован сегодня.`);
-    } else {
-      alert(`Лежак ${i + 1}\nСвободное время:\n${freeList.join("\n")}`);
-    }
-  };
-
-  // ─────────────────────────────────────────────────────────────
-  // 9) Обработка выбора/снятия лежака (для оплаты)
-  // ─────────────────────────────────────────────────────────────
-  const toggleLoungerSelection = (i) => {
-    if (selectedBeach === null) return;
-    // Проверяем, занят ли лежак прямо сейчас
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    let isOccupiedNow = false;
-    fetchedBookings.forEach((b) => {
-      if (b.beachId !== beaches[selectedBeach].id) return;
-      if (!Array.isArray(b.loungers) || !b.loungers.includes(i + 1)) return;
-      const [h1, m1] = b.bookingTimeStart.split(":").map(Number);
-      const [h2, m2] = b.bookingTimeEnd.split(":").map(Number);
-      const startMin = h1 * 60 + m1;
-      const endMin = h2 * 60 + m2;
-      if (nowMinutes >= startMin && nowMinutes < endMin) {
-        isOccupiedNow = true;
-      }
-    });
-    if (isOccupiedNow) return;
-    setSelectedLoungers((prev) =>
-      prev.includes(i) ? prev.filter((idx) => idx !== i) : [...prev, i]
-    );
-  };
-
-  // ─────────────────────────────────────────────────────────────
-  // 10) Обработка оплаты / создания брони
-  // ─────────────────────────────────────────────────────────────
+  /* ——— 10. Создать бронь («оплата») ————————————————————— */
   const handlePay = async () => {
     if (selectedBeach === null) return;
     setLoadingBooking(true);
 
-    const beachObj = beaches[selectedBeach];
-    const bookingData = {
+    const beach = beaches[selectedBeach];
+    const data = {
       userName,
       userPhone,
-      beachName: beachObj.name,
-      beachId: beachObj.id,
+      beachId: beach.id,
+      beachName: beach.name,
       loungers: selectedLoungers.map((i) => i + 1),
       bookingDate,
       bookingTimeStart,
       bookingTimeEnd,
-      price: selectedLoungers.length * beachObj.price,
+      price: selectedLoungers.length * beach.price,
       status: "paid",
       createdAt: serverTimestamp()
     };
 
     try {
-      const bookingRef = await addDoc(bookingsCollectionRef, bookingData);
-
-      // Сохраняем для QR
-      setLastBookingData({
-        id: bookingRef.id,
-        beachName: beachObj.name,
-        loungers: selectedLoungers.map((i) => i + 1),
-        bookingDate,
-        bookingTimeStart,
-        bookingTimeEnd,
-        price: selectedLoungers.length * beachObj.price,
-        beachPrice: beachObj.price
-      });
-
-      setTimeout(() => {
-        setQrShown(true);
-        setTimeout(() => {
-          setModalOpen(false);
-          setPaymentModal(false);
-        }, 2000);
-      }, 1500);
-    } catch (err) {
-      console.error("Ошибка при создании брони:", err);
-      alert("Не удалось записать бронь. Попробуйте ещё раз.");
+      const ref = await addDoc(bookingsCollectionRef, data);
+      setLastBookingData({ id: ref.id, ...data });
+      setQrShown(true);
+      setPaymentModal(false);
+      setSchemaModalOpen(false);
+    } catch (e) {
+      console.error(e);
+      alert("Ошибка при создании брони.");
     } finally {
       setLoadingBooking(false);
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // 11) Закрыть модалки
-  // ─────────────────────────────────────────────────────────────
-  const closeModal = () => {
-    setModalOpen(false);
-    setPaymentModal(false);
-    setQrShown(false);
-    setSelectedLoungers([]);
-    setFetchedBookings([]);
-  };
-
-  // ─────────────────────────────────────────────────────────────
-  // Пока не проверили авторизацию – показываем «Проверка…»
-  // ─────────────────────────────────────────────────────────────
+  /* ======================  UI ====================== */
   if (!isAuthChecked) {
     return (
-      <div
-        style={{
-          fontFamily: "Arial, sans-serif",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: "100vw",
-          height: "100vh"
-        }}
-      >
+      <div style={styles.center}>
         <p>Проверка авторизации…</p>
       </div>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // 12) Если authStep === 1 → форма «Имя + Телефон»
-  // ─────────────────────────────────────────────────────────────
-  if (authStep === 1) {
-    return (
-      <div
-        style={{
-          fontFamily: "Arial, sans-serif",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          width: "100vw",
-          height: "100vh",
-          background: "#f8f0f8"
+/* — форма регистрации — */
+if (authStep === 1) {
+  return (
+    <div style={styles.authWrap}>
+      <h2 style={styles.authTitle}>Регистрация</h2>
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setAuthError("");
+          if (!userName.trim()) {
+            setAuthError("Введите имя");
+            return;
+          }
+          if (!userPhone.trim().match(/^\S+@\S+\.\S+$/)) {
+            setAuthError("Введите корректный email");
+            return;
+          }
+          if (verificationCode.length < 6) {
+            setAuthError("Придумайте пароль (мин. 6 символов)");
+            return;
+          }
+          try {
+            const userCred = await createUserWithEmailAndPassword(auth, userPhone, verificationCode);
+            await updateProfile(userCred.user, { displayName: userName });
+            localStorage.setItem("beachRentUserName", userName);
+            localStorage.setItem("beachRentUserPhone", userPhone);
+            setAuthStep(3);
+          } catch (err) {
+            setAuthError(err.message);
+          }
         }}
+        style={styles.authForm}
       >
-        <h2 style={{ marginBottom: 20, fontSize: 24, color: "#333" }}>
-          Регистрация
-        </h2>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setAuthError("");
+        <label style={styles.label}>
+          Имя:
+          <input
+            style={styles.input}
+            value={userName}
+            onChange={(e) => setUserName(e.target.value)}
+          />
+        </label>
+        <label style={styles.label}>
+          E-mail:
+          <input
+            style={styles.input}
+            placeholder="example@email.com"
+            value={userPhone}
+            onChange={(e) => setUserPhone(e.target.value)}
+          />
+        </label>
+        <label style={styles.label}>
+          Придумайте пароль:
+          <input
+            style={styles.input}
+            type="password"
+            value={verificationCode}
+            onChange={(e) => setVerificationCode(e.target.value)}
+          />
+        </label>
+        <button style={styles.primaryBtn}>Зарегистрироваться</button>
+        {authError && <div style={styles.error}>{authError}</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
+          <button style={styles.skipBtn} type="button" onClick={() => setAuthStep(3)}>Пропустить</button>
+          <button style={styles.skipBtn} type="button" onClick={() => setAuthStep(4)}>Есть аккаунт</button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
-            // Проверяем имя
-            if (!userName.trim()) {
-              setAuthError("Пожалуйста, введите ваше имя.");
-              return;
-            }
-            // Проверяем формат телефона
-            if (!userPhone.match(/^\+\d{10,15}$/)) {
-              setAuthError("Номер должен быть в формате +7XXXXXXXXXX.");
-              return;
-            }
-
-            // Сбрасываем предыдущую reCAPTCHA, если осталась
-            if (window.recaptchaVerifier) {
-              try {
-                window.recaptchaVerifier.clear();
-              } catch {}
-              window.recaptchaVerifier = null;
-            }
-
-            // Создаём Invisible reCAPTCHA
-            try {
-              const verifier = new RecaptchaVerifier(
-                auth,
-                "recaptcha-container",
-                {
-                  size: "invisible",
-                  callback: () => {}
-                }
-              );
-              window.recaptchaVerifier = verifier;
-              await verifier.render();
-
-              // Отправляем SMS
-              signInWithPhoneNumber(auth, userPhone, verifier)
-                .then((result) => {
-                  setConfirmationResult(result);
-                  setAuthStep(2);
-                })
-                .catch((err) => {
-                  console.error("Ошибка при отправке SMS:", err);
-                  setAuthError(
-                    "Не удалось отправить SMS. Проверьте настройки Firebase Auth и домен."
-                  );
-                  try {
-                    verifier.clear();
-                  } catch {}
-                  window.recaptchaVerifier = null;
-                });
-            } catch (err) {
-              console.error("Ошибка инициализации reCAPTCHA:", err);
-              setAuthError("Не удалось инициализировать reCAPTCHA.");
-            }
-          }}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            background: "linear-gradient(135deg, #ffe4f0, #ffd0e8)",
-            padding: 24,
-            borderRadius: 12,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-            minWidth: 320
-          }}
-        >
-          <label
-            style={{
-              marginBottom: 12,
-              fontSize: 16,
-              color: "#555",
-              width: "100%"
-            }}
-          >
-            Ваше имя:
-            <br />
-            <input
-              type="text"
-              value={userName}
-              onChange={(e) => setUserName(e.target.value)}
-              placeholder="Иван Иванов"
-              style={{
-                marginTop: 6,
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-                width: "100%",
-                fontSize: 14,
-                boxSizing: "border-box"
-              }}
-            />
-          </label>
-
-          <label
-            style={{
-              marginBottom: 12,
-              fontSize: 16,
-              color: "#555",
-              width: "100%"
-            }}
-          >
-            Телефон (+7…):
-            <br />
-            <input
-              type="tel"
-              value={userPhone}
-              onChange={(e) => setUserPhone(e.target.value.trim())}
-              placeholder="+7XXXXXXXXXX"
-              style={{
-                marginTop: 6,
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-                width: "100%",
-                fontSize: 14,
-                boxSizing: "border-box"
-              }}
-            />
-          </label>
-
-          <button
-            type="submit"
-            style={{
-              marginTop: 8,
-              padding: "12px 30px",
-              background: "linear-gradient(to right, #DB7093, #C71585)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 30,
-              cursor: "pointer",
-              fontWeight: 600,
-              fontSize: 16
-            }}
-          >
-            Получить код
-          </button>
-
-          {authError && (
-            <div style={{ color: "red", marginTop: 12, fontSize: 14 }}>
-              {authError}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => {
-              setUserName("Гость");
-              setUserPhone("");
-              setAuthStep(3);
-            }}
-            style={{
-              marginTop: 16,
-              background: "none",
-              border: "none",
-              color: "#DB7093",
-              textDecoration: "underline",
-              fontSize: 14,
-              cursor: "pointer"
-            }}
-          >
-            Пропустить регистрацию
-          </button>
-        </form>
-
-        {/* Invisible reCAPTCHA сюда вставит Firebase */}
-        <div id="recaptcha-container"></div>
-      </div>
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // 13) Если authStep === 2 → форма «Введите код из SMS»
-  // ─────────────────────────────────────────────────────────────
-  if (authStep === 2) {
+if (authStep === 2) {
     return (
-      <div
-        style={{
-          fontFamily: "Arial, sans-serif",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          width: "100vw",
-          height: "100vh",
-          background: "#f8f0f8"
-        }}
-      >
-        <h2 style={{ marginBottom: 20, fontSize: 24, color: "#333" }}>
-          Введите код из SMS
-        </h2>
+      <div style={styles.authWrap}>
+        <h2 style={styles.authTitle}>Код из SMS</h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             setAuthError("");
             if (!verificationCode.trim()) {
-              setAuthError("Введите код из SMS.");
+              setAuthError("Введите код");
               return;
             }
-            if (!confirmationResult) {
-              setAuthError("Сначала получите код.");
-              return;
-            }
-
             confirmationResult
               .confirm(verificationCode)
               .then(() => {
-                // Код подтверждён. Сохраняем имя/телефон и переходим к основному экрану
                 localStorage.setItem("beachRentUserName", userName);
                 localStorage.setItem("beachRentUserPhone", userPhone);
                 setAuthStep(3);
               })
-              .catch((err) => {
-                console.error("Ошибка при проверке кода:", err);
-                setAuthError("Неверный код. Попробуйте ещё раз.");
-              });
+              .catch(() => setAuthError("Неверный код"));
           }}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            background: "linear-gradient(135deg, #ffe4f0, #ffd0e8)",
-            padding: 24,
-            borderRadius: 12,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-            minWidth: 320
-          }}
+          style={styles.authForm}
         >
-          <label
-            style={{
-              marginBottom: 12,
-              fontSize: 16,
-              color: "#555",
-              width: "100%"
-            }}
-          >
-            Код из SMS:
-            <br />
+          <label style={styles.label}>
+            Код:
             <input
-              type="text"
+              style={styles.input}
+              placeholder="123456"
               value={verificationCode}
               onChange={(e) => setVerificationCode(e.target.value.trim())}
-              placeholder="123456"
-              style={{
-                marginTop: 6,
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-                width: "100%",
-                fontSize: 14,
-                boxSizing: "border-box"
-              }}
             />
           </label>
-
+          <button style={styles.primaryBtn}>Подтвердить</button>
+          {authError && <div style={styles.error}>{authError}</div>}
           <button
-            type="submit"
-            style={{
-              marginTop: 8,
-              padding: "12px 30px",
-              background: "linear-gradient(to right, #DB7093, #C71585)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 30,
-              cursor: "pointer",
-              fontWeight: 600,
-              fontSize: 16
-            }}
-          >
-            Подтвердить
-          </button>
-
-          <button
+            style={styles.skipBtn}
             type="button"
             onClick={async () => {
-              // При выходе меняем номер
-              if (window.recaptchaVerifier) {
-                try {
-                  window.recaptchaVerifier.clear();
-                } catch {}
-                window.recaptchaVerifier = null;
-              }
               await signOut(auth);
               setAuthStep(1);
-              setVerificationCode("");
-              setAuthError("");
-            }}
-            style={{
-              marginTop: 8,
-              background: "none",
-              border: "none",
-              color: "#DB7093",
-              textDecoration: "underline",
-              fontSize: 14,
-              cursor: "pointer"
             }}
           >
             Изменить номер
           </button>
-
-          {authError && (
-            <div style={{ color: "red", marginTop: 12, fontSize: 14 }}>
-              {authError}
-            </div>
-          )}
         </form>
-
-        {/* Invisible reCAPTCHA здесь уже подгружен */}
-        <div id="recaptcha-container"></div>
       </div>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // 14) Иначе authStep === 3 → основной экран (карта + бронирование)
-  // ─────────────────────────────────────────────────────────────
+if (authStep === 4) {
   return (
-    <div
-      style={{
-        fontFamily: "Arial, sans-serif",
-        background: "#FFE4E1",
-        minHeight: "100vh"
-      }}
-    >
-      {/* ===== Шапка ===== */}
-      <header
-        style={{
-          background: "#DB7093",
-          color: "#fff",
-          padding: "12px 20px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center"
+    <div style={styles.authWrap}>
+      <h2 style={styles.authTitle}>Вход</h2>
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setAuthError("");
+          try {
+            const res = await signInWithEmailAndPassword(auth, userPhone, verificationCode);
+            localStorage.setItem("beachRentUserName", res.user.displayName || "Гость");
+            localStorage.setItem("beachRentUserPhone", userPhone);
+            setAuthStep(3);
+          } catch (err) {
+            setAuthError("Неверный email или пароль");
+          }
         }}
+        style={styles.authForm}
       >
-        <h1 style={{ margin: 0, fontSize: "20px" }}>🏖 Пляж</h1>
+        <label style={styles.label}>
+          E-mail:
+          <input
+            style={styles.input}
+            placeholder="example@email.com"
+            value={userPhone}
+            onChange={(e) => setUserPhone(e.target.value)}
+          />
+        </label>
+        <label style={styles.label}>
+          Пароль:
+          <input
+            type="password"
+            style={styles.input}
+            value={verificationCode}
+            onChange={(e) => setVerificationCode(e.target.value)}
+          />
+        </label>
+        <button style={styles.primaryBtn}>Войти</button>
+        {authError && <div style={styles.error}>{authError}</div>}
+        <button
+          style={styles.skipBtn}
+          type="button"
+          onClick={() => setAuthStep(1)}
+        >
+          Назад
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ———————————————————————————————————————————————————————— */
+  /* ——— ОСНОВНОЙ ЭКРАН ————————————————————————————————— */
+  return (
+    <div style={{ fontFamily: "Arial,sans-serif", background: "#FFE4E1" }}>
+      {/* Header */}
+      <header style={styles.header}>
+        <h1>🏖 Пляж</h1>
         <div>
-          <span style={{ marginRight: 16, fontSize: 16 }}>
-            Здравствуйте, {userName} ({userPhone})
-          </span>
+          {userName} {userPhone && `(${userPhone})`}
           <button
+            style={styles.logoutBtn}
             onClick={async () => {
               await signOut(auth);
-              localStorage.removeItem("beachRentUserName");
-              localStorage.removeItem("beachRentUserPhone");
+              localStorage.clear();
               setAuthStep(1);
-              setUserName("");
-              setUserPhone("");
-              if (window.recaptchaVerifier) {
-                try {
-                  window.recaptchaVerifier.clear();
-                } catch {}
-                window.recaptchaVerifier = null;
-              }
-            }}
-            style={{
-              background: "#fff",
-              color: "#DB7093",
-              border: "none",
-              padding: "6px 12px",
-              borderRadius: 6,
-              cursor: "pointer",
-              fontWeight: 600
             }}
           >
             Выйти
@@ -964,72 +594,51 @@ export default function App() {
         </div>
       </header>
 
-      {/* ===== Карта с пляжами (Polygon, Placemark) ===== */}
-      <div
-        style={{
-          maxWidth: 1100,
-          margin: "20px auto",
-          background: "rgba(255,255,255,0.92)",
-          borderRadius: 20
-        }}
-      >
+      {/* Карта */}
+      <div style={styles.mapWrapper}>
         <YMaps query={{ apikey: API_KEY }}>
           <Map
-            defaultState={{ center: [43.414, 39.952], zoom: 12 }}
+            defaultState={{ center: [43.421, 39.93], zoom: 12 }}
             width="100%"
-            height="500px"
+            height="450px"
           >
-            {beaches.map((beach, idx) => {
-              // Если area пустой или некорректный – ничего не рисуем
-              if (!Array.isArray(beach.area) || beach.area.length < 3) {
-                return null;
-              }
-
-              // Расчет процента занятости
-              const percent = calculateOccupancyPercent(beach, bookingsToday);
-
-              // Выбираем цвет заливки в зависимости от процента и статуса
-              let fillColor;
-              if (beach.closed) {
-                fillColor = "#CCCCCC66"; // полупрозрачный серый
-              } else if (percent >= 80) {
-                fillColor = "#FF000055"; // полупрозрачный красный
-              } else if (percent >= 50) {
-                fillColor = "#FFFF0055"; // полупрозрачный жёлтый
-              } else {
-                fillColor = "#00FF0055"; // полупрозрачный зелёный
-              }
-
+            {beaches.map((b, i) => {
+              if (b.area.length < 3) return null;
+              const pct = occupancyPercent(b, bookingsToday);
+              const fill = b.closed
+                ? "#CCC"
+                : pct >= 80
+                ? "#F88"
+                : pct >= 50
+                ? "#FF8"
+                : "#8F8";
               return (
-                <React.Fragment key={beach.id}>
-                  {/* 1) Отрисуем полигон (границу пляжа) */}
+                <React.Fragment key={b.id}>
                   <Polygon
-                    geometry={[beach.area]}
-                    options={{
-                      fillColor,
-                      strokeColor: beach.closed ? "#888888" : "#555555",
-                      strokeWidth: 2,
-                      hintContent: `${beach.name} (${beach.price} руб/ч) - ${percent}%`
-                    }}
-                    properties={{
-                      balloonContent: `<strong>${beach.name}</strong><br/>Цена: ${beach.price} руб/ч<br/>Занято: ${percent}%`
-                    }}
-                    onClick={() => openBeachDetail(idx)}
+  geometry={[b.area]}
+  options={{
+    fillColor: b.closed
+      ? "rgba(150, 150, 150, 0.5)" // СЕРЫЙ если закрыт
+      : pct >= 80
+      ? "rgba(255, 100, 100, 0.5)" // КРАСНЫЙ при > 80%
+      : pct >= 50
+      ? "rgba(255, 255, 100, 0.5)" // ЖЁЛТЫЙ при > 50%
+      : "rgba(100, 255, 100, 0.5)",// ЗЕЛЁНЫЙ при < 50%
+    strokeColor: "#666", // можно тёмно-серый
+    strokeWidth: 2,
+    hintContent: `${b.name} • ${pct}%`
+  }}
+                    onClick={() => { if (!b.closed) openInfo(i); }}
                   />
-
-                  {/* 2) Маркер-центр пляжа */}
                   <Placemark
-                    geometry={beach.coords}
-                    properties={{
-                      hintContent: beach.name
-                    }}
+                    geometry={b.coords}
                     options={{
                       iconLayout: "default#image",
                       iconImageHref:
-                        "https://maps.gox.ru/__em_/beach-marker.png", // либо свой URL иконки
-                      iconImageSize: [30, 30],
-                      iconImageOffset: [-15, -15]
+                        "https://maps.gox.ru/__em_/beach-marker.png",
+                      iconImageSize: [30, 30]
                     }}
+                    onClick={() => { if (!b.closed) openInfo(i); }}
                   />
                 </React.Fragment>
               );
@@ -1037,11 +646,7 @@ export default function App() {
 
             {selectedBeach !== null && userCoords && (
               <RoutePanel
-                options={{
-                  float: "right",
-                  showHeader: true,
-                  reverseGeocoding: true
-                }}
+                options={{ float: "right", showHeader: true }}
                 instanceRef={(ref) => {
                   if (ref) {
                     ref.routePanel.state.set({
@@ -1057,130 +662,200 @@ export default function App() {
         </YMaps>
       </div>
 
-      {/* ===== Модалка выбора шезлонгов (modalOpen && !paymentModal) ===== */}
-      {modalOpen && selectedBeach !== null && !paymentModal && (
-        <div
-          style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            top: 0,
-            background: "rgba(0,0,0,0.22)",
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center"
-          }}
-          onClick={closeModal}
-        >
+      {/* Карточки пляжей */}
+      <div style={styles.cardsWrap}>
+        {beaches.map((b, i) => (
           <div
+            key={b.id}
+            style={{ ...styles.card, opacity: b.closed ? 0.5 : 1, cursor: b.closed ? 'not-allowed' : 'pointer' }}
+            onClick={() => { if (!b.closed) openInfo(i); }}
+          >
+            <div style={styles.cardImg}>
+              {b.images && b.images.length > 0 && (
+                <img
+                  src={b.images[0]}
+                  alt={b.name}
+                  style={styles.cardImgImage}
+                />
+              )}
+            </div>
+            <h3>{b.name}</h3>
+            <p>
+              {b.price} ₽/ч • {occupancyPercent(b, bookingsToday)}% занято
+            </p>
+            
+    <button
+      style={{
+        ...styles.cardBtn,
+        background: b.closed ? "#ccc" : styles.cardBtn.background,
+        cursor: b.closed ? "not-allowed" : "pointer"
+      }}
+      disabled={b.closed}
+    >
+      {b.closed ? "Недоступно" : "Забронировать"}
+    </button>
+    
+          </div>
+        ))}
+      </div>
+
+      {/* INLINE QR-кнопка (под карточками) */}
+      {qrShown && lastBookingData && (
+        <div style={{ textAlign: "center", margin: "20px 0" }}>
+          <button
+            style={styles.inlineQrBtn}
+            onClick={() => setQrModalOpen(true)}
+          >
+            Показать QR
+          </button>
+        </div>
+      )}
+
+      {/* ================== МОДАЛКИ ================== */}
+
+      {/* 1) Модалка описания пляжа */}
+      
+{infoModalOpen && selectedBeach !== null && (
+  <div style={styles.overlay} onClick={closeAll}>
+    <div style={styles.infoModal} onClick={(e) => e.stopPropagation()}>
+      <button style={styles.closeBtn} onClick={closeAll}>×</button>
+      <h2>{beaches[selectedBeach].name}</h2>
+
+      <div style={{ position: "relative", width: "100%", overflow: "hidden", borderRadius: 12 }}>
+        <button
+          onClick={() => setCurrentImageIndex((i) => Math.max(i - 1, 0))}
+          style={{
+            position: "absolute",
+            left: 10,
+            top: "50%",
+            transform: "translateY(-50%)",
+            backgroundColor: "#fff",
+            border: "none",
+            fontSize: 24,
+            borderRadius: "50%",
+            zIndex: 1,
+            cursor: "pointer"
+          }}
+        >
+          ‹
+        </button>
+        {beaches[selectedBeach] && beaches[selectedBeach].images && beaches[selectedBeach].images.length > 0 && (
+          <img
+            src={beaches[selectedBeach].images[currentImageIndex]}
+            alt="Фото пляжа"
             style={{
-              background: "#fff",
               width: "100%",
-              maxWidth: 620,
-              minHeight: 400,
-              borderRadius: "25px 25px 0 0",
-              boxShadow: "0 0 40px #0004",
-              padding: 32,
-              position: "relative",
-              animation: "fadein 0.3s",
-              maxHeight: "90vh",
-              overflowY: "auto"
+              height: "240px",
+              objectFit: "cover",
+              borderRadius: 12
             }}
+          />
+        )}
+        <button
+          onClick={() =>
+            setCurrentImageIndex((i) =>
+              Math.min(i + 1, (beaches[selectedBeach]?.images?.length || 1) - 1)
+            )
+          }
+          style={{
+            position: "absolute",
+            right: 10,
+            top: "50%",
+            transform: "translateY(-50%)",
+            backgroundColor: "#fff",
+            border: "none",
+            fontSize: 24,
+            borderRadius: "50%",
+            zIndex: 1,
+            cursor: "pointer"
+          }}
+        >
+          ›
+        </button>
+      </div>
+
+      <p style={{ margin: "12px 0" }}>
+        {beaches[selectedBeach].description}
+      </p>
+      <button
+        style={{
+          ...styles.mainBtn,
+          background: "linear-gradient(to right,#DB7093,#C71585)"
+        }}
+        onClick={() => openBeachDetail(selectedBeach)}
+      >
+        Забронировать
+      </button>
+    </div>
+  </div>
+)}
+{schemaModalOpen && selectedBeach !== null && !paymentModal && (
+        <div style={styles.overlay} onClick={closeAll}>
+          <div
+            style={styles.schemaModal}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              onClick={closeModal}
-              style={{
-                position: "absolute",
-                top: 18,
-                right: 18,
-                background: "#DB7093",
-                color: "#fff",
-                border: "none",
-                borderRadius: 20,
-                padding: "8px 20px",
-                fontWeight: 600,
-                fontSize: 15,
-                cursor: "pointer"
-              }}
-            >
-              Закрыть
+            <button style={styles.closeBtn} onClick={closeAll}>
+              ×
             </button>
-
-            <h2 style={{ color: "#C71585", marginBottom: 10 }}>
-              {beaches[selectedBeach].name}{" "}
-              <span style={{ fontWeight: 400, color: "#888" }}>
-                ({beaches[selectedBeach].price} руб./час)
-              </span>
+            <h2>
+              {beaches[selectedBeach].name} (
+              {beaches[selectedBeach].price} ₽/ч)
             </h2>
 
-            {/* Сетка из лежаков */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, 48px)",
-                gap: 12,
-                marginBottom: 20
-              }}
-            >
+            {/* GRID 12 колонн + горизонтальный скролл */}
+            <div style={styles.grid}>
               {Array(beaches[selectedBeach].loungersCount)
                 .fill(0)
                 .map((_, i) => {
-                  // Расчет текущего времени
-                  const now = new Date();
-                  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-                  let isOccupiedNow = false;
-                  let isBookedLater = false;
-
+                  const nowM =
+                    new Date().getHours() * 60 +
+                    new Date().getMinutes();
+                  let busyNow = false,
+                    busyLater = false;
                   fetchedBookings.forEach((b) => {
                     if (b.beachId !== beaches[selectedBeach].id) return;
-                    if (!Array.isArray(b.loungers) || !b.loungers.includes(i + 1))
-                      return;
-                    const [h1, m1] = b.bookingTimeStart.split(":").map(Number);
-                    const [h2, m2] = b.bookingTimeEnd.split(":").map(Number);
-                    const startMin = h1 * 60 + m1;
-                    const endMin = h2 * 60 + m2;
-                    if (nowMinutes >= startMin && nowMinutes < endMin) {
-                      isOccupiedNow = true;
-                    } else if (nowMinutes < startMin) {
-                      isBookedLater = true;
-                    }
+                    if (!b.loungers.includes(i + 1)) return;
+                    const [h1, m1] = b.bookingTimeStart
+                      .split(":")
+                      .map(Number);
+                    const [h2, m2] = b.bookingTimeEnd
+                      .split(":")
+                      .map(Number);
+                    const s = h1 * 60 + m1,
+                      e = h2 * 60 + m2;
+                    if (nowM >= s && nowM < e) busyNow = true;
+                    else if (nowM < s) busyLater = true;
                   });
-
-                  let bgColor = isOccupiedNow
-                    ? "#FF0000"
-                    : isBookedLater
-                    ? "#FFFF00"
-                    : "#4CAF50";
-
+                  const bg = busyNow ? "#F44336" : "#4CAF50";
                   return (
                     <div
                       key={i}
-                      onClick={() => {
-                        if (!isOccupiedNow) toggleLoungerSelection(i);
-                      }}
-                      onDoubleClick={() => handleLoungerClick(i)}
                       style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 8,
-                        background: bgColor,
-                        color: "#fff",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: isOccupiedNow ? "not-allowed" : "pointer",
-                        fontWeight: 600,
-                        fontSize: 15,
-                        border: isOccupiedNow
-                          ? "2px solid #ccc"
-                          : selectedLoungers.includes(i)
-                          ? "2px solid #1976D2"
-                          : "2px solid transparent",
-                        opacity: isOccupiedNow ? 0.55 : 1
+                        ...styles.lounger,
+                        background: bg,
+                        opacity: busyNow ? 0.5 : 1,
+                        border:
+                          selectedLoungers.includes(i) && !busyNow
+                            ? "2px solid #1976D2"
+                            : "2px solid transparent"
                       }}
+                      onClick={() => {
+                        if (busyNow) return;
+                        setSelectedLoungers((prev) =>
+                          prev.includes(i)
+                            ? prev.filter((x) => x !== i)
+                            : [...prev, i]
+                        );
+                      }}
+                      onDoubleClick={() =>
+                        alert(
+                          `Лежак ${i + 1}\nСвободно:\n` +
+                            (freeIntervals(i, fetchedBookings).join(
+                              "\n"
+                            ) || "нет интервалов")
+                        )
+                      }
                     >
                       {i + 1}
                     </div>
@@ -1188,121 +863,118 @@ export default function App() {
                 })}
             </div>
 
-            {/* Выбор даты и времени */}
-            <div style={{ margin: "18px 0" }}>
-              <label style={{ marginRight: 10 }}>Дата: </label>
-              <input
-                type="date"
-                value={bookingDate}
-                onChange={async (e) => {
-                  setBookingDate(e.target.value);
-                  // Обновляем fetchedBookings для новой даты и выбранного пляжа
-                  if (selectedBeach !== null) {
-                    const beachId = beaches[selectedBeach].id;
+            {/* «Море» */}
+            <div style={styles.seaStrip}>🌊 Море</div>
+
+            {/* Дата */}
+            <div style={styles.timeWrap}>
+              <label>
+                Дата:
+                <input
+                  type="date"
+                  style={styles.dateInput}
+                  value={bookingDate}
+                  min={todayStr}
+                  max={new Date(
+                    Date.now() + 7 * 864e5
+                  )
+                    .toISOString()
+                    .slice(0, 10)}
+                  onChange={async (e) => {
+                    setBookingDate(e.target.value);
                     const q = query(
                       bookingsCollectionRef,
-                      where("beachId", "==", beachId),
+                      where("beachId", "==", beaches[selectedBeach].id),
                       where("bookingDate", "==", e.target.value)
                     );
-                    const snapshot = await getDocs(q);
+                    const snap = await getDocs(q);
                     const arr = [];
-                    snapshot.forEach((docSnap) => {
-                      const data = docSnap.data();
-                      const loungersArray = Array.isArray(data.loungers)
-                        ? data.loungers
-                        : [];
+                    snap.forEach((d) =>
                       arr.push({
-                        ...data,
-                        loungers: loungersArray
-                      });
-                    });
+                        ...d.data(),
+                        loungers: d.data().loungers ?? []
+                      })
+                    );
                     setFetchedBookings(arr);
+                    setSelectedLoungers([]);
+                  }}
+                />
+              </label>
+
+              {/* Начало */}
+              <label>
+                Начало:
+                <select
+                  style={styles.select}
+                  value={bookingTimeStart}
+                  onChange={(e) =>
+                    setBookingTimeStart(e.target.value)
                   }
-                  setSelectedLoungers([]);
-                }}
-                min={new Date().toISOString().slice(0, 10)}
-                max={new Date(Date.now() + 7 * 86400000)
-                  .toISOString()
-                  .slice(0, 10)}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 6,
-                  border: "1px solid #ccc"
-                }}
-              />
-              <label style={{ margin: "0 10px 0 24px" }}>Время: </label>
-              <input
-                type="time"
-                min="07:00"
-                max="20:00"
-                value={bookingTimeStart}
-                onChange={(e) => setBookingTimeStart(e.target.value)}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 6,
-                  border: "1px solid #ccc",
-                  width: 80
-                }}
-              />
-              <span style={{ margin: "0 5px" }}>—</span>
-              <input
-                type="time"
-                min="07:00"
-                max="20:00"
-                value={bookingTimeEnd}
-                onChange={(e) => setBookingTimeEnd(e.target.value)}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 6,
-                  border: "1px solid #ccc",
-                  width: 80
-                }}
-              />
+                >
+                  <option value="">--</option>
+                  {availableTimes.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Конец */}
+              <label>
+                Конец:
+                <select
+                  style={styles.select}
+                  value={bookingTimeEnd}
+                  onChange={(e) =>
+                    setBookingTimeEnd(e.target.value)
+                  }
+                >
+                  <option value="">--</option>
+                  {availableTimes.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
-            <div style={{ margin: "18px 0 8px 0", fontSize: 16 }}>
-              Выбрано: <b>{selectedLoungers.length}</b> шезлонгов{" "}
-              <span style={{ marginLeft: 20 }}>
-                Стоимость:{" "}
-                <b style={{ color: "#DB7093" }}>
-                  {selectedLoungers.length * beaches[selectedBeach].price} руб.
-                </b>
-              </span>
-            </div>
+            <p>
+              Выбрано: <b>{selectedLoungers.length}</b> шезлонгов • Цена:{" "}
+              <b style={{ color: "#C71585" }}>
+                {selectedLoungers.length *
+                  beaches[selectedBeach].price}
+                ₽
+              </b>
+            </p>
+
             <button
-              disabled={
-                !selectedLoungers.length ||
-                !bookingDate ||
-                !bookingTimeStart ||
-                !bookingTimeEnd ||
-                bookingTimeEnd <= bookingTimeStart
-              }
               style={{
-                width: "100%",
-                padding: "12px 0",
+                ...styles.mainBtn,
                 background:
                   selectedLoungers.length &&
-                  bookingDate &&
                   bookingTimeStart &&
                   bookingTimeEnd &&
                   bookingTimeEnd > bookingTimeStart
-                    ? "linear-gradient(to right, #DB7093, #C71585)"
-                    : "#eee",
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 18,
-                border: "none",
-                borderRadius: 20,
+                    ? "linear-gradient(to right,#DB7093,#C71585)"
+                    : "#ccc",
                 cursor:
                   selectedLoungers.length &&
-                  bookingDate &&
                   bookingTimeStart &&
                   bookingTimeEnd &&
                   bookingTimeEnd > bookingTimeStart
                     ? "pointer"
-                    : "not-allowed",
-                marginTop: 12
+                    : "not-allowed"
               }}
+              disabled={
+                !(
+                  selectedLoungers.length &&
+                  bookingTimeStart &&
+                  bookingTimeEnd &&
+                  bookingTimeEnd > bookingTimeStart
+                )
+              }
               onClick={() => setPaymentModal(true)}
             >
               Забронировать
@@ -1311,188 +983,342 @@ export default function App() {
         </div>
       )}
 
-      {/* ===== Модалка оплаты (paymentModal) ===== */}
-      {modalOpen && paymentModal && (
-        <div
-          style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            top: 0,
-            background: "rgba(0,0,0,0.32)",
-            zIndex: 1100,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center"
-          }}
-          onClick={closeModal}
-        >
+      {/* 3) Оплата / показ QR */}
+      {paymentModal && (
+        <div style={styles.overlay} onClick={closeAll}>
           <div
-            style={{
-              background: "#fff",
-              width: "100%",
-              maxWidth: 360,
-              borderRadius: 20,
-              padding: 32,
-              position: "relative",
-              textAlign: "center",
-              animation: "fadein 0.3s"
-            }}
+            style={styles.payModal}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              onClick={closeModal}
-              style={{
-                position: "absolute",
-                top: 12,
-                right: 18,
-                background: "#DB7093",
-                color: "#fff",
-                border: "none",
-                borderRadius: 20,
-                padding: "5px 15px",
-                fontWeight: 600,
-                fontSize: 15,
-                cursor: "pointer"
-              }}
-            >
+            <button style={styles.closeBtn} onClick={closeAll}>
               ×
             </button>
-            <h2>Оплата бронирования</h2>
             {!qrShown ? (
               <>
-                <div style={{ margin: "22px 0" }}>
+                <h2>Оплатить бронирование</h2>
+                <p>
+                  К оплате:{" "}
                   <b>
-                    Сумма к оплате:{" "}
                     {selectedLoungers.length *
-                      beaches[selectedBeach].price}{" "}
+                      beaches[selectedBeach].price}
                     ₽
                   </b>
-                </div>
+                </p>
                 <button
+                  style={{...styles.mainBtn, background: "linear-gradient(to right,#DB7093,#C71585)"}}
                   disabled={loadingBooking}
-                  style={{
-                    background: "linear-gradient(to right, #DB7093, #C71585)",
-                    color: "#fff",
-                    fontWeight: 700,
-                    border: "none",
-                    borderRadius: 20,
-                    padding: "12px 30px",
-                    fontSize: 18,
-                    cursor: "pointer",
-                    opacity: loadingBooking ? 0.6 : 1
-                  }}
                   onClick={handlePay}
                 >
-                  {loadingBooking ? "Сохраняем бронь…" : "Оплатить по СБП"}
+                  {loadingBooking ? "..." : "Оплатить"}
                 </button>
               </>
             ) : (
               <>
-                <p>Ваш QR-код подтверждения брони:</p>
+                <h2>Ваш QR-код</h2>
                 <QRCodeCanvas
-                  value={`Пляж: ${
-                    beaches[selectedBeach].name
-                  }\nИмя: ${userName}\nТелефон: ${userPhone}\nДата: ${bookingDate}\nВремя: ${bookingTimeStart}–${bookingTimeEnd}\nШезлонги: ${selectedLoungers
-                    .map((n) => n + 1)
-                    .join(", ")}\nСумма: ${
-                    selectedLoungers.length * beaches[selectedBeach].price
-                  }₽`}
-                  size={170}
-                  style={{ margin: "22px 0" }}
+                  value={JSON.stringify(lastBookingData)}
+                  size={180}
                 />
-                <p style={{ color: "#aaa", fontSize: 14 }}>
-                  После оплаты бронь активирована
-                </p>
+                <p>Покажите код сотруднику пляжа</p>
               </>
             )}
           </div>
         </div>
       )}
 
-      {/* ===== Кнопка «Показать мой QR-код» ===== */}
-      {qrShown && lastBookingData && (
-        <button
-          onClick={() => setModalOpen(true)}
-          style={{
-            position: "fixed",
-            bottom: 24,
-            right: 24,
-            padding: "12px 18px",
-            background: "linear-gradient(to right, #DB7093, #C71585)",
-            color: "#fff",
-            border: "none",
-            borderRadius: 30,
-            fontSize: 16,
-            cursor: "pointer",
-            boxShadow: "0 3px 8px rgba(0,0,0,0.2)"
-          }}
-        >
-          Показать мой QR-код
-        </button>
-      )}
-
-      {/* ===== Модалка с QR-кодом (modalOpen && qrShown) ===== */}
-      {modalOpen && qrShown && lastBookingData && (
-        <div
-          style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            top: 0,
-            background: "rgba(0,0,0,0.22)",
-            zIndex: 1200,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center"
-          }}
-          onClick={closeModal}
-        >
+      {/* 4) Модалка чисто QR */}
+      {qrModalOpen && qrShown && lastBookingData && (
+        <div style={styles.overlay} onClick={closeAll}>
           <div
-            style={{
-              background: "#fff",
-              width: "100%",
-              maxWidth: 360,
-              borderRadius: 20,
-              padding: 32,
-              position: "relative",
-              textAlign: "center",
-              animation: "fadein 0.3s"
-            }}
+            style={styles.payModal}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              onClick={closeModal}
-              style={{
-                position: "absolute",
-                top: 18,
-                right: 18,
-                background: "#DB7093",
-                color: "#fff",
-                border: "none",
-                borderRadius: 20,
-                padding: "6px 15px",
-                fontWeight: 600,
-                fontSize: 16,
-                cursor: "pointer"
-              }}
-            >
+            <button style={styles.closeBtn} onClick={closeAll}>
               ×
             </button>
-            <h2>Мой QR-код брони</h2>
+            <h2>QR-код брони</h2>
             <QRCodeCanvas
-              value={`bookingId: ${lastBookingData.id}\nИмя: ${userName}\nТелефон: ${userPhone}\nПляж: ${lastBookingData.beachName}\nДата: ${lastBookingData.bookingDate}\nВремя: ${lastBookingData.bookingTimeStart}–${lastBookingData.bookingTimeEnd}\nЛежаки: ${lastBookingData.loungers.join(
-                ", "
-              )}\nСумма: ${lastBookingData.price}₽`}
+              value={JSON.stringify(lastBookingData)}
               size={200}
-              style={{ margin: "20px 0" }}
             />
-            <p>Покажите этот QR-код сотруднику пляжа при входе</p>
+            <p>Покажите этот код на пляже</p>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+/* ==================================================================
+   СТИЛИ
+================================================================== */
+const styles = {
+  /* — общий центр — */
+  center: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100vw",
+    height: "100vh",
+    fontFamily: "Arial, sans-serif"
+  },
+
+  /* — Header — */
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    background: "#DB7093",
+    color: "#fff",
+    padding: "12px 20px"
+  },
+  logoutBtn: {
+    marginLeft: 16,
+    background: "#fff",
+    color: "#DB7093",
+    border: "none",
+    padding: "6px 12px",
+    borderRadius: 6,
+    cursor: "pointer"
+  },
+
+  /* — Карта — */
+  mapWrapper: {
+    maxWidth: 1100,
+    margin: "20px auto",
+    background: "rgba(255,255,255,0.9)",
+    borderRadius: 16,
+    overflow: "hidden"
+  },
+
+  /* — Карточки пляжей — */
+  cardsWrap: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))",
+    gap: 20,
+    maxWidth: 1100,
+    margin: "20px auto 0"
+  },
+  card: {
+    background: "#fff",
+    borderRadius: 14,
+    padding: 16,
+    textAlign: "center",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center"
+  },
+  cardImg: {
+    width: "100%",
+    height: 80,
+    borderRadius: 10,
+    background: "linear-gradient(135deg,#ffe,#ddf)",
+    overflow: "hidden"
+  },
+  cardImgImage: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover"
+  },
+  cardBtn: {
+    marginTop: "auto",
+    background: "linear-gradient(to right,#DB7093,#C71585)",
+    color: "#fff",
+    border: "none",
+    borderRadius: 20,
+    padding: "8px 12px",
+    cursor: "pointer"
+  },
+
+  /* — inline-QR button — */
+  inlineQrBtn: {
+    background: "linear-gradient(to right,#DB7093,#C71585)",
+    color: "#fff",
+    border: "none",
+    padding: "12px 24px",
+    borderRadius: 30,
+    cursor: "pointer",
+    fontSize: 16
+  },
+
+  /* — Модальные оверлеи — */
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.25)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000
+  },
+  closeBtn: {
+    position: "absolute",
+    top: 12,
+    right: 16,
+    background: "#DB7093",
+    color: "#fff",
+    border: "none",
+    borderRadius: 20,
+    padding: "4px 12px",
+    cursor: "pointer"
+  },
+
+  /* — Модалка описания пляжа — */
+  infoModal: {
+    background: "#fff",
+    borderRadius: 16,
+    padding: 24,
+    width: "90%",
+    maxWidth: 380,
+    position: "relative",
+    textAlign: "center"
+  },
+  imageCarousel: {
+  scrollSnapType: 'x mandatory',
+  scrollBehavior: 'smooth',
+    display: "flex",
+    overflowX: "auto",
+    gap: 8,
+    margin: "12px 0"
+  },
+  infoImage: {
+  scrollSnapAlign: 'center',
+  width: '100%',
+  height: '240px',
+    flexShrink: 0,
+    width: 100,
+    height: 70,
+    objectFit: "cover",
+    borderRadius: 8
+  },
+
+  /* — Схема лежаков — */
+  schemaModal: {
+    background: "#fff",
+    width: "95%",
+    maxWidth: 640,
+    maxHeight: "90vh",
+    borderRadius: "20px 20px 0 0",
+    padding: 24,
+    paddingBottom: 8,
+    position: "relative",
+    overflowY: "auto"
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(12,48px)",
+    gap: 8,
+    marginBottom: 12,
+    overflowX: "auto"
+  },
+  lounger: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    userSelect: "none",
+    fontWeight: 600
+  },
+  seaStrip: {
+    height: 32,
+    background: "linear-gradient(to bottom,#4facfe,#00f2fe)",
+    borderRadius: "0 0 20px 20px",
+    textAlign: "center",
+    lineHeight: "32px",
+    color: "#fff",
+    marginBottom: 16
+  },
+
+  /* — Время/дата — */
+  timeWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+    marginBottom: 16
+  },
+  dateInput: {
+    marginLeft: 8,
+    padding: "4px 8px",
+    borderRadius: 6,
+    border: "1px solid #ccc"
+  },
+  select: {
+    marginLeft: 8,
+    padding: "4px 8px",
+    borderRadius: 6,
+    border: "1px solid #ccc"
+  },
+
+  /* — Оплата/Qr — */
+  payModal: {
+    background: "#fff",
+    borderRadius: 16,
+    padding: 24,
+    width: 320,
+    position: "relative",
+    textAlign: "center"
+  },
+  mainBtn: {
+    marginTop: 12,
+    width: "100%",
+    padding: "10px 0",
+    border: "none",
+    borderRadius: 20,
+    color: "#fff",
+    fontWeight: 600,
+    fontSize: 16,
+    cursor: "pointer"
+  },
+
+  /* — Формы авторизации — */
+  authWrap: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "100vh",
+    background: "#f8f0f8"
+  },
+  authTitle: { marginBottom: 16, fontSize: 24 },
+  authForm: {
+    display: "flex",
+    flexDirection: "column",
+    background: "#ffe4f0",
+    padding: 24,
+    borderRadius: 12,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+    minWidth: 300
+  },
+  label: { marginBottom: 12 },
+  input: {
+    marginTop: 6,
+    padding: "8px 12px",
+    borderRadius: 6,
+    border: "1px solid #ccc",
+    width: "100%",
+    boxSizing: "border-box"
+  },
+  primaryBtn: {
+    marginTop: 8,
+    padding: "10px",
+    background: "linear-gradient(to right,#DB7093,#C71585)",
+    color: "#fff",
+    border: "none",
+    borderRadius: 20,
+    cursor: "pointer"
+  },
+  skipBtn: {
+    marginTop: 12,
+    background: "none",
+    border: "none",
+    color: "#DB7093",
+    textDecoration: "underline",
+    cursor: "pointer"
+  },
+  error: { color: "red", fontSize: 14, marginTop: 8 }
+};

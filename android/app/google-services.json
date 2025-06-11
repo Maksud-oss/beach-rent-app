@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "691307900121",
+    "project_id": "beach-rent-real-time",
+    "storage_bucket": "beach-rent-real-time.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:691307900121:android:efb00bfe2962a0e3ff62c8",
+        "android_client_info": {
+          "package_name": "com.beach.staff"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDh0i2RYXV1R-lB1hlbVFDx4ZC6Zl_a2t8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

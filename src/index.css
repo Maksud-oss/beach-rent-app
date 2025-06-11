@@ -11,3 +11,27 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+/* Создайте или добавьте в конец App.css */
+
+.pink-button {
+  background: linear-gradient(90deg, #ff80ab, #ff4081);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.pink-button[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* ABSOLUTELY ASCII: розовая градиентная кнопка */
+.pink-btn {
+  background: linear-gradient(90deg,#ff80ab,#ff4081) !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 20px !important;
+  padding: 8px 12px !important;
+  cursor: pointer !important;
+}
